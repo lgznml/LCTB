@@ -684,10 +684,7 @@ def main():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-                # Aggiungere questo codice dopo la sezione "Download section" nel main(), 
-                # prima di st.success("✅ Analysis completed successfully!")
                 
-                # ----------------------- FORMATTAZIONE FILE DI OUTPUT CON OPENPYXL -----------------------
                 def apply_excel_formatting(result_df, output_buffer):
                     """Apply advanced formatting to the Excel file"""
                     try:
@@ -887,3 +884,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
