@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
 import pickle
+import gzip
+
 warnings.filterwarnings('ignore')
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 PngImagePlugin.MAX_TEXT_CHUNK = 10000000
@@ -25,7 +27,7 @@ st.set_page_config(
 )
 
 def load_uploaded_model(uploaded_file, model_type):
-    """Load models from uploaded files"""
+    """Enhanced model loading with better error handling and multiple loading strategies"""
     try:
         if model_type == "keras":
             # Save uploaded file temporarily and load
@@ -33,20 +35,132 @@ def load_uploaded_model(uploaded_file, model_type):
                 f.write(uploaded_file.getbuffer())
             model = tf.keras.models.load_model("temp_model.keras")
             return model
+            
         elif model_type == "pkl":
-            # Try different loading methods for pickle files
+            # Reset file pointer to beginning
+            uploaded_file.seek(0)
+            file_content = uploaded_file.getvalue()
+            
+            # Try multiple loading strategies
+            loading_strategies = [
+                ("joblib", lambda: joblib.load(io.BytesIO(file_content))),
+                ("pickle", lambda: pickle.load(io.BytesIO(file_content))),
+                ("joblib_compressed", lambda: joblib.load(io.BytesIO(file_content), mmap_mode='r')),
+            ]
+            
+            for strategy_name, load_func in loading_strategies:
+                try:
+                    st.info(f"Trying to load with {strategy_name}...")
+                    model = load_func()
+                    st.success(f"Successfully loaded with {strategy_name}")
+                    return model
+                except Exception as e:
+                    st.warning(f"Failed with {strategy_name}: {str(e)}")
+                    continue
+            
+            # If all strategies fail, try to diagnose the issue
+            st.error("All loading strategies failed. Attempting diagnosis...")
+            
+            # Check file header to identify the format
+            file_header = file_content[:16]
+            st.write(f"File header (first 16 bytes): {file_header}")
+            st.write(f"File size: {len(file_content)} bytes")
+            
+            # Try to identify if it's a compressed file
+            if file_content.startswith(b'\x1f\x8b'):
+                st.info("File appears to be gzip compressed. Trying gzip decompression...")
+                try:
+                    decompressed = gzip.decompress(file_content)
+                    model = pickle.loads(decompressed)
+                    st.success("Successfully loaded gzip compressed pickle file")
+                    return model
+                except Exception as e:
+                    st.error(f"Gzip decompression failed: {e}")
+            
+            # Try different pickle protocols
+            for protocol in range(5, -1, -1):  # Try from highest to lowest protocol
+                try:
+                    st.info(f"Trying pickle protocol {protocol}...")
+                    # This won't work directly, but we can try to load with different methods
+                    model = pickle.load(io.BytesIO(file_content))
+                    st.success(f"Successfully loaded with protocol attempt {protocol}")
+                    return model
+                except Exception as e:
+                    continue
+            
+            # Try loading as a numpy array (sometimes models are saved as arrays)
             try:
-                # Method 1: Try with joblib
-                model = joblib.load(io.BytesIO(uploaded_file.getvalue()))
+                st.info("Trying to load as numpy array...")
+                model = np.load(io.BytesIO(file_content), allow_pickle=True)
+                st.success("Successfully loaded as numpy array")
                 return model
-            except:
-                # Method 2: Try with pickle
-                uploaded_file.seek(0)
-                model = pickle.load(io.BytesIO(uploaded_file.getvalue()))
-                return model
+            except Exception as e:
+                st.warning(f"Numpy loading failed: {e}")
+            
+            # Try loading with different encodings
+            encodings = ['latin1', 'bytes']
+            for encoding in encodings:
+                try:
+                    st.info(f"Trying pickle with encoding: {encoding}")
+                    model = pickle.load(io.BytesIO(file_content), encoding=encoding)
+                    st.success(f"Successfully loaded with encoding: {encoding}")
+                    return model
+                except Exception as e:
+                    continue
+            
+            st.error("All loading attempts failed. The file might be corrupted or saved in an unsupported format.")
+            return None
+            
     except Exception as e:
         st.error(f"Error loading {model_type} model: {e}")
+        st.error("Please check if:")
+        st.error("1. The file is not corrupted")
+        st.error("2. The file was saved with a compatible Python/library version")
+        st.error("3. The file is actually a pickle/joblib file")
         return None
+
+def diagnose_pickle_file(uploaded_file):
+    """Diagnostic function to analyze pickle file format"""
+    uploaded_file.seek(0)
+    file_content = uploaded_file.getvalue()
+    
+    st.subheader("🔍 File Diagnostic Information")
+    
+    # File size
+    st.write(f"**File size:** {len(file_content)} bytes")
+    
+    # File header analysis
+    header = file_content[:32]
+    st.write(f"**File header (hex):** {header.hex()}")
+    st.write(f"**File header (bytes):** {header}")
+    
+    # Check for common file signatures
+    signatures = {
+        b'\x80\x03': 'Pickle protocol 3',
+        b'\x80\x04': 'Pickle protocol 4', 
+        b'\x80\x05': 'Pickle protocol 5',
+        b'\x1f\x8b': 'Gzip compressed',
+        b'PK': 'ZIP archive (possibly joblib)',
+        b'\x89HDF': 'HDF5 format',
+    }
+    
+    detected_format = "Unknown"
+    for sig, format_name in signatures.items():
+        if file_content.startswith(sig):
+            detected_format = format_name
+            break
+    
+    st.write(f"**Detected format:** {detected_format}")
+    
+    # Try to identify the library used to save the file
+    if b'sklearn' in file_content:
+        st.write("**Library hint:** File likely contains scikit-learn objects")
+    if b'lightgbm' in file_content:
+        st.write("**Library hint:** File likely contains LightGBM objects")
+    if b'xgboost' in file_content:
+        st.write("**Library hint:** File likely contains XGBoost objects")
+    if b'catboost' in file_content:
+        st.write("**Library hint:** File likely contains CatBoost objects")
 
 def preprocess_image(image, target_size=(224, 224)):
     """Preprocess image for model prediction"""
@@ -374,9 +488,13 @@ def main():
     
     pkl_model_file = st.sidebar.file_uploader(
         "Gradient Boosting Model (.pkl file)", 
-        type=['pkl'],
+        type=['pkl', 'joblib'],
         key="pkl_model"
     )
+    
+    # Add diagnostic button for pickle files
+    if pkl_model_file and st.sidebar.button("🔍 Diagnose Pickle File"):
+        diagnose_pickle_file(pkl_model_file)
     
     # Load models if uploaded
     discount_model = None
@@ -510,6 +628,11 @@ def main():
         ### 📋 Required Files:
         - **📊 Excel Files**: st_item, A, B, calendar, tracking, goals, segment
         - **🤖 Model Files**: discount_predictive_model_v2.keras, optimized_gradient_boosting_model.pkl
+        
+        ### 🔧 Troubleshooting:
+        - If you get a pickle loading error, use the "🔍 Diagnose Pickle File" button
+        - Ensure your model files are compatible with the current Python environment
+        - Check that files aren't corrupted during upload
         
         ### ⚠️ Important Notes:
         - All segments are automatically included in the analysis
