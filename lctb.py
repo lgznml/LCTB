@@ -584,8 +584,8 @@ def main():
     
     # Week range selection
     st.sidebar.subheader("📅 Week Range")
-    start_week = st.sidebar.text_input("Start Week (YYYY-WW)", value="2024-01")
-    end_week = st.sidebar.text_input("End Week (YYYY-WW)", value="2024-52")
+    start_week = st.sidebar.text_input("Start Week (YYYY-WW)", value="2025-19")
+    end_week = st.sidebar.text_input("End Week (YYYY-WW)", value="2025-25")
     
     # Check if all files are uploaded
     all_excel_uploaded = len(excel_files) == len(required_excel_files)
@@ -714,4 +714,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
