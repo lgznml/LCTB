@@ -668,7 +668,14 @@ def main():
                 
                 # Download button
                 current_date = datetime.now().strftime('%d-%m-%Y')
-                filename = f"IC_proposte_sconti_{current_date}.xlsx"
+                category = max(result_df["Cod Category"])
+                if category == 31:
+                    filename = f"IC_proposte_sconti_WOMAN_{current_date}.xlsx"
+                if category == 32:
+                    filename = f"IC_proposte_sconti_MAN_{current_date}.xlsx"
+                if category == 33:
+                    filename = f"IC_proposte_sconti_KIDS_{current_date}.xlsx"
+                
                 
                 st.download_button(
                     label="📥 Download Excel Report",
@@ -707,3 +714,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
