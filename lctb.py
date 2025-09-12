@@ -512,7 +512,7 @@ def main():
         ### How to use this application:
         
         1. **Upload Files**: Upload all required Excel files and model files using the sidebar
-        2. **Configure Parameters**: Set the week range and select segments
+        2. **Configure Parameters**: Set the week range (all segments are automatically included)
         3. **Process Analysis**: Click the "Process Analysis" button
         4. **Review Results**: Check the analysis results and key metrics
         5. **Download Report**: Download the formatted Excel report
