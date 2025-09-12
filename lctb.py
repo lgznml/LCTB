@@ -34,9 +34,16 @@ def load_uploaded_model(uploaded_file, model_type):
             model = tf.keras.models.load_model("temp_model.keras")
             return model
         elif model_type == "pkl":
-            # Load pickle model directly from bytes
-            model = joblib.load(io.BytesIO(uploaded_file.getvalue()))
-            return model
+            # Try different loading methods for pickle files
+            try:
+                # Method 1: Try with joblib
+                model = joblib.load(io.BytesIO(uploaded_file.getvalue()))
+                return model
+            except:
+                # Method 2: Try with pickle
+                uploaded_file.seek(0)
+                model = pickle.load(io.BytesIO(uploaded_file.getvalue()))
+                return model
     except Exception as e:
         st.error(f"Error loading {model_type} model: {e}")
         return None
@@ -82,7 +89,7 @@ def categorize_st(df, function_name, year_month, df_classified):
     
     return df_classified
 
-def process_discount_analysis(files_dict, week_range, selected_segments, discount_model, gradient_model):
+def process_discount_analysis(files_dict, week_range, discount_model, gradient_model):
     """Main processing function"""
     try:
         st.info("Processing discount analysis...")
@@ -275,12 +282,7 @@ def process_discount_analysis(files_dict, week_range, selected_segments, discoun
             merged_df2.groupby(["Function"])["ST item"].transform("mean").round(4)
         )
         
-        # Filter by segments
-        segment_filtered = segment[segment["Segment"].isin(selected_segments)]
-        items_in_right_segment = set(segment_filtered["Cod item"])
-        merged_df_final = merged_df2[merged_df2["Item Code"].isin(items_in_right_segment)]
-        
-        # Merge with segment data
+        # Include all segments - no filtering
         merged_df2 = pd.merge(merged_df2, segment, left_on="Item Code", right_on="Cod item", how="left")
         merged_df2 = merged_df2.drop(columns=["Cod item"])
         
@@ -329,14 +331,14 @@ def process_discount_analysis(files_dict, week_range, selected_segments, discoun
         return None
 
 def main():
-    st.title("Discount Analysis System")
+    st.title("💰 Discount Analysis System")
     st.markdown("Upload your files and configure parameters to generate discount proposals.")
     
     # Sidebar for file uploads
-    st.sidebar.header("File Uploads")
+    st.sidebar.header("📁 File Uploads")
     
     # Excel files upload
-    st.sidebar.subheader("Excel Files")
+    st.sidebar.subheader("📊 Excel Files")
     excel_files = {}
     required_excel_files = {
         'st_item': 'ST Item Excel file',
@@ -362,7 +364,7 @@ def main():
                 st.sidebar.error(f"❌ Error loading {label}: {e}")
     
     # Model files upload
-    st.sidebar.subheader("Model Files")
+    st.sidebar.subheader("🤖 Model Files")
     
     keras_model_file = st.sidebar.file_uploader(
         "Keras Model (.keras file)",
@@ -395,32 +397,23 @@ def main():
             st.sidebar.error("❌ Failed to load gradient boosting model")
     
     # Configuration section
-    st.sidebar.header("Configuration")
+    st.sidebar.header("⚙️ Configuration")
     
     # Week range selection
-    st.sidebar.subheader("Week Range")
+    st.sidebar.subheader("📅 Week Range")
     start_week = st.sidebar.text_input("Start Week (YYYY-WW)", value="2024-01")
     end_week = st.sidebar.text_input("End Week (YYYY-WW)", value="2024-52")
-    
-    # Segment selection
-    st.sidebar.subheader("Segments")
-    segment_options = [1, 2, 3, 4]  # Numeric values as in original code
-    selected_segments = st.sidebar.multiselect(
-        "Select segments to include:",
-        segment_options,
-        default=segment_options
-    )
     
     # Check if all files are uploaded
     all_excel_uploaded = len(excel_files) == len(required_excel_files)
     all_models_uploaded = discount_model is not None and gradient_model is not None
     
     # Status display
-    st.subheader("Upload Status")
+    st.subheader("📋 Upload Status")
     col1, col2 = st.columns(2)
     
     with col1:
-        st.write("**Excel Files:**")
+        st.write("**📊 Excel Files:**")
         for key, label in required_excel_files.items():
             if key in excel_files:
                 st.write(f"✅ {label}")
@@ -428,7 +421,7 @@ def main():
                 st.write(f"❌ {label}")
     
     with col2:
-        st.write("**Model Files:**")
+        st.write("**🤖 Model Files:**")
         if discount_model:
             st.write("✅ Keras model")
         else:
@@ -440,53 +433,48 @@ def main():
             st.write("❌ Gradient boosting model")
     
     # Processing button
-    if st.sidebar.button("Process Analysis", type="primary"):
+    if st.sidebar.button("🚀 Process Analysis", type="primary"):
         if not all_excel_uploaded:
-            st.error("Please upload all required Excel files.")
+            st.error("❌ Please upload all required Excel files.")
             return
         
         if not all_models_uploaded:
-            st.error("Please upload both model files.")
+            st.error("❌ Please upload both model files.")
             return
         
-        if not selected_segments:
-            st.error("Please select at least one segment.")
-            return
-        
-        with st.spinner("Processing analysis... This may take several minutes."):
+        with st.spinner("⏳ Processing analysis... This may take several minutes."):
             # Process the analysis
             result_df = process_discount_analysis(
                 excel_files,
                 (start_week, end_week),
-                selected_segments,
                 discount_model,
                 gradient_model
             )
             
             if result_df is not None:
                 # Display results
-                st.subheader("Analysis Results")
+                st.subheader("📊 Analysis Results")
                 
                 # Key metrics
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total Items", len(result_df))
+                    st.metric("📦 Total Items", len(result_df))
                 with col2:
                     discount_items = len(result_df[result_df.get('Sconto proposto', '') == 'SI'])
-                    st.metric("Items with Discount", discount_items)
+                    st.metric("🏷️ Items with Discount", discount_items)
                 with col3:
                     avg_sva = result_df.get('SVA', pd.Series([0])).mean()
-                    st.metric("Average SVA", f"{avg_sva:.2f}")
+                    st.metric("💰 Average SVA", f"{avg_sva:.2f}")
                 with col4:
                     total_stock = result_df.get('Stock residuo', pd.Series([0])).sum()
-                    st.metric("Total Residual Stock", f"{total_stock:.0f}")
+                    st.metric("📋 Total Residual Stock", f"{total_stock:.0f}")
                 
                 # Data preview
-                st.subheader("Data Preview")
+                st.subheader("👁️ Data Preview")
                 st.dataframe(result_df.head(100), height=400)
                 
                 # Download section
-                st.subheader("Download Results")
+                st.subheader("💾 Download Results")
                 
                 # Convert to Excel
                 output = io.BytesIO()
@@ -500,26 +488,33 @@ def main():
                 filename = f"IC_proposte_sconti_{current_date}.xlsx"
                 
                 st.download_button(
-                    label="Download Excel Report",
+                    label="📥 Download Excel Report",
                     data=output.getvalue(),
                     file_name=filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+                
+                st.success("✅ Analysis completed successfully!")
     
     # Instructions
-    with st.expander("Instructions"):
+    with st.expander("📖 Instructions & Help"):
         st.markdown("""
-        ### How to use this application:
+        ### 🔧 How to use this application:
         
-        1. **Upload Files**: Upload all required Excel files and model files using the sidebar
-        2. **Configure Parameters**: Set the week range (all segments are automatically included)
-        3. **Process Analysis**: Click the "Process Analysis" button
-        4. **Review Results**: Check the analysis results and key metrics
-        5. **Download Report**: Download the formatted Excel report
+        1. **📁 Upload Files**: Upload all required Excel files and model files using the sidebar
+        2. **⚙️ Configure Parameters**: Set the week range (all segments are automatically included)
+        3. **🚀 Process Analysis**: Click the "Process Analysis" button
+        4. **👁️ Review Results**: Check the analysis results and key metrics
+        5. **💾 Download Report**: Download the formatted Excel report
         
-        ### Required Files:
-        - **Excel Files**: st_item, A, B, calendar, tracking, goals, segment
-        - **Model Files**: discount_predictive_model_v2.keras, optimized_gradient_boosting_model.pkl
+        ### 📋 Required Files:
+        - **📊 Excel Files**: st_item, A, B, calendar, tracking, goals, segment
+        - **🤖 Model Files**: discount_predictive_model_v2.keras, optimized_gradient_boosting_model.pkl
+        
+        ### ⚠️ Important Notes:
+        - All segments are automatically included in the analysis
+        - Only items with delivered quantity ≥ 5000 are processed
+        - The analysis uses both Keras and Gradient Boosting models for predictions
         """)
 
 if __name__ == "__main__":
