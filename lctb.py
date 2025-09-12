@@ -683,7 +683,180 @@ def main():
                     file_name=filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+
+                # Aggiungere questo codice dopo la sezione "Download section" nel main(), 
+                # prima di st.success("✅ Analysis completed successfully!")
                 
+                # ----------------------- FORMATTAZIONE FILE DI OUTPUT CON OPENPYXL -----------------------
+                def apply_excel_formatting(result_df, output_buffer):
+                    """Apply advanced formatting to the Excel file"""
+                    try:
+                        # Reset buffer position
+                        output_buffer.seek(0)
+                        
+                        # Load the workbook from the buffer
+                        wb = load_workbook(output_buffer)
+                        ws = wb.active
+                        
+                        # Get item codes for red formatting
+                        cod_items_seq = set(result_df["Item Code"].astype(str))
+                        
+                        # Header configuration
+                        header_config = {
+                            "Proposal": {
+                                "round": 4,
+                                "num_format": '0.0000',
+                                "font": Font(bold=True),
+                                "fill": PatternFill(start_color="EBF1DE", end_color="EBF1DE", fill_type="solid")
+                            },
+                            "ST Difference": {
+                                "round": 4,
+                                "num_format": '0.0000',
+                                "font": Font(bold=True),
+                                "fill": PatternFill(start_color="E4DFEC", end_color="E4DFEC", fill_type="solid")
+                            },
+                            "ST item": {
+                                "round": 4,
+                                "num_format": '0.0000',
+                                "font": Font(bold=True),
+                                "fill": PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")
+                            },
+                            "Sales item": {
+                                "round": 2,
+                                "num_format": '0.00'
+                            },
+                            "Delivered item": {
+                                "round": 2,
+                                "num_format": '0.00'
+                            },
+                            "Sales 4th Normalizzata": {
+                                "round": 2,
+                                "num_format": '0.00'
+                            },
+                            "SVA": {
+                                "round": 2,
+                                "num_format": '0.00'
+                            },
+                            "Stock residuo": {
+                                "round": 2,
+                                "num_format": '0.00'
+                            },
+                            "Total Item Tracked": {
+                                "round": 4,
+                                "num_format": '0.0000'
+                            },
+                            "TFI": {
+                                "fill": PatternFill(start_color="EFF7FF", end_color="EFF7FF", fill_type="solid")
+                            },
+                            "Delta ST P2W": {
+                                "fill": PatternFill(start_color="EFF7FF", end_color="EFF7FF", fill_type="solid")
+                            },
+                            "Delta ST P3W": {
+                                "fill": PatternFill(start_color="EFF7FF", end_color="EFF7FF", fill_type="solid")
+                            }
+                        }
+                        
+                        # Map header names to column indices
+                        header_columns = {}
+                        for cell in ws[1]:
+                            if cell.value in header_config:
+                                header_columns[cell.value] = cell.column
+                        
+                        # Apply formatting to each configured column
+                        for header, config in header_config.items():
+                            if header not in header_columns or header in ["Delta ST P2W", "Delta ST P3W"]:
+                                continue
+                            
+                            col_idx = header_columns[header]
+                            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=col_idx, max_col=col_idx):
+                                for cell in row:
+                                    # Replace "-" with 0
+                                    if cell.value == "-":
+                                        cell.value = 0
+                                    
+                                    # Apply number formatting
+                                    if isinstance(cell.value, (int, float)) and "round" in config:
+                                        cell.value = round(cell.value, config["round"])
+                                        cell.number_format = config["num_format"]
+                                    
+                                    # Apply font formatting
+                                    if "font" in config:
+                                        cell.font = config["font"]
+                                    
+                                    # Apply fill formatting
+                                    if "fill" in config:
+                                        cell.fill = config["fill"]
+                        
+                        # Special formatting for Delta ST columns (without number formatting)
+                        for header in ["Delta ST P2W", "Delta ST P3W"]:
+                            if header in header_columns:
+                                col_idx = header_columns[header]
+                                config = header_config[header]
+                                for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=col_idx, max_col=col_idx):
+                                    for cell in row:
+                                        if "font" in config:
+                                            cell.font = config["font"]
+                                        if "fill" in config:
+                                            cell.fill = config["fill"]
+                        
+                        # Apply red font to specific item codes
+                        item_code_col = None
+                        for cell in ws[1]:
+                            if cell.value == "Item Code":
+                                item_code_col = cell.column
+                                break
+                        
+                        if item_code_col is not None:
+                            red_font = Font(color="FF0000")
+                            for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+                                item_value = row[item_code_col - 1].value
+                                if str(item_value) in cod_items_seq:
+                                    for cell in row:
+                                        cell.font = red_font
+                        else:
+                            st.warning("Colonna 'Item Code' non trovata nel file di output.")
+                        
+                        # Save formatted workbook to new buffer
+                        formatted_output = io.BytesIO()
+                        wb.save(formatted_output)
+                        formatted_output.seek(0)
+                        
+                        return formatted_output
+                        
+                    except Exception as e:
+                        st.error(f"Errore durante la formattazione: {e}")
+                        # Return original buffer if formatting fails
+                        output_buffer.seek(0)
+                        return output_buffer
+                
+                # Sostituire la sezione "Convert to Excel" esistente con questo codice:
+                # Convert to Excel with basic formatting
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    result_df.to_excel(writer, index=False, sheet_name='Discount Analysis')
+                
+                # Apply advanced formatting
+                formatted_output = apply_excel_formatting(result_df, output)
+                
+                # Download button con file formattato
+                current_date = datetime.now().strftime('%d-%m-%Y')
+                category = result_df["Cod Category"].max() if "Cod Category" in result_df.columns else 31
+                
+                if category == 31:
+                    filename = f"IC_proposte_sconti_WOMAN_{current_date}.xlsx"
+                elif category == 32:
+                    filename = f"IC_proposte_sconti_MAN_{current_date}.xlsx"
+                elif category == 33:
+                    filename = f"IC_proposte_sconti_KIDS_{current_date}.xlsx"
+                else:
+                    filename = f"IC_proposte_sconti_{current_date}.xlsx"
+                
+                st.download_button(
+                    label="📥 Download Formatted Excel Report",
+                    data=formatted_output.getvalue(),
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
                 st.success("✅ Analysis completed successfully!")
     
     # Instructions
@@ -714,5 +887,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
