@@ -13,7 +13,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
 import pickle
-
 warnings.filterwarnings('ignore')
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 PngImagePlugin.MAX_TEXT_CHUNK = 10000000
@@ -96,8 +95,6 @@ def process_discount_analysis(files_dict, week_range, selected_segments, discoun
         tracking = files_dict['tracking']
         goals = files_dict['goals']
         segment = files_dict['segment']
-        images_df = files_dict['images']
-        df_sequenza = files_dict['sequenza']
         
         # Process calendar data
         calendar['YearWeek'] = calendar['YearWeek'].astype(str)
@@ -348,9 +345,7 @@ def main():
         'calendar': 'Calendar Excel file',
         'tracking': 'Tracking Excel file',
         'goals': 'Goals Excel file',
-        'segment': 'Segment Excel file',
-        'images': 'Images Excel file',
-        'sequenza': 'Sequenza Excel file'
+        'segment': 'Segment Excel file'
     }
     
     for key, label in required_excel_files.items():
@@ -523,7 +518,7 @@ def main():
         5. **Download Report**: Download the formatted Excel report
         
         ### Required Files:
-        - **Excel Files**: st_item, A, B, calendar, tracking, goals, segment, images, sequenza
+        - **Excel Files**: st_item, A, B, calendar, tracking, goals, segment
         - **Model Files**: discount_predictive_model_v2.keras, optimized_gradient_boosting_model.pkl
         """)
 
