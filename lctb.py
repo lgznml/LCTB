@@ -14,6 +14,9 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
 import pickle
 import gzip
+import sys
+import sklearn
+from packaging import version
 
 warnings.filterwarnings('ignore')
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -26,9 +29,31 @@ st.set_page_config(
     layout="wide"
 )
 
-def load_uploaded_model(uploaded_file, model_type):
-    """Enhanced model loading with better error handling and multiple loading strategies"""
+def fix_sklearn_compatibility():
+    """Add compatibility fixes for different sklearn versions"""
     try:
+        # Check if _RemainderColsList exists, if not create a dummy one
+        from sklearn.compose._column_transformer import _RemainderColsList
+    except ImportError:
+        # Create a dummy class for backward compatibility
+        class _RemainderColsList(list):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+        
+        # Monkey patch it into the module
+        import sklearn.compose._column_transformer
+        sklearn.compose._column_transformer._RemainderColsList = _RemainderColsList
+        
+        # Also add it to the main namespace for pickle to find
+        import sklearn.compose
+        sklearn.compose._RemainderColsList = _RemainderColsList
+
+def load_uploaded_model(uploaded_file, model_type):
+    """Enhanced model loading with sklearn version compatibility fixes"""
+    try:
+        # Apply sklearn compatibility fixes
+        fix_sklearn_compatibility()
+        
         if model_type == "keras":
             # Save uploaded file temporarily and load
             with open("temp_model.keras", "wb") as f:
@@ -41,11 +66,17 @@ def load_uploaded_model(uploaded_file, model_type):
             uploaded_file.seek(0)
             file_content = uploaded_file.getvalue()
             
-            # Try multiple loading strategies
+            # Display sklearn version info
+            st.info(f"Current scikit-learn version: {sklearn.__version__}")
+            
+            # Try multiple loading strategies with version compatibility
             loading_strategies = [
-                ("joblib", lambda: joblib.load(io.BytesIO(file_content))),
-                ("pickle", lambda: pickle.load(io.BytesIO(file_content))),
-                ("joblib_compressed", lambda: joblib.load(io.BytesIO(file_content), mmap_mode='r')),
+                ("joblib_with_compat", lambda: load_with_joblib_compat(file_content)),
+                ("pickle_with_compat", lambda: load_with_pickle_compat(file_content)),
+                ("joblib_ignore_warnings", lambda: load_with_joblib_ignore_warnings(file_content)),
+                ("pickle_ignore_warnings", lambda: load_with_pickle_ignore_warnings(file_content)),
+                ("joblib_original", lambda: joblib.load(io.BytesIO(file_content))),
+                ("pickle_original", lambda: pickle.load(io.BytesIO(file_content))),
             ]
             
             for strategy_name, load_func in loading_strategies:
@@ -53,62 +84,23 @@ def load_uploaded_model(uploaded_file, model_type):
                     st.info(f"Trying to load with {strategy_name}...")
                     model = load_func()
                     st.success(f"Successfully loaded with {strategy_name}")
-                    return model
+                    
+                    # Validate that the model is actually usable
+                    if hasattr(model, 'predict'):
+                        st.success("Model validation: predict method found")
+                        return model
+                    else:
+                        st.warning(f"Model loaded but no predict method found")
+                        continue
+                        
                 except Exception as e:
                     st.warning(f"Failed with {strategy_name}: {str(e)}")
                     continue
             
             # If all strategies fail, try to diagnose the issue
             st.error("All loading strategies failed. Attempting diagnosis...")
+            diagnose_model_file(file_content)
             
-            # Check file header to identify the format
-            file_header = file_content[:16]
-            st.write(f"File header (first 16 bytes): {file_header}")
-            st.write(f"File size: {len(file_content)} bytes")
-            
-            # Try to identify if it's a compressed file
-            if file_content.startswith(b'\x1f\x8b'):
-                st.info("File appears to be gzip compressed. Trying gzip decompression...")
-                try:
-                    decompressed = gzip.decompress(file_content)
-                    model = pickle.loads(decompressed)
-                    st.success("Successfully loaded gzip compressed pickle file")
-                    return model
-                except Exception as e:
-                    st.error(f"Gzip decompression failed: {e}")
-            
-            # Try different pickle protocols
-            for protocol in range(5, -1, -1):  # Try from highest to lowest protocol
-                try:
-                    st.info(f"Trying pickle protocol {protocol}...")
-                    # This won't work directly, but we can try to load with different methods
-                    model = pickle.load(io.BytesIO(file_content))
-                    st.success(f"Successfully loaded with protocol attempt {protocol}")
-                    return model
-                except Exception as e:
-                    continue
-            
-            # Try loading as a numpy array (sometimes models are saved as arrays)
-            try:
-                st.info("Trying to load as numpy array...")
-                model = np.load(io.BytesIO(file_content), allow_pickle=True)
-                st.success("Successfully loaded as numpy array")
-                return model
-            except Exception as e:
-                st.warning(f"Numpy loading failed: {e}")
-            
-            # Try loading with different encodings
-            encodings = ['latin1', 'bytes']
-            for encoding in encodings:
-                try:
-                    st.info(f"Trying pickle with encoding: {encoding}")
-                    model = pickle.load(io.BytesIO(file_content), encoding=encoding)
-                    st.success(f"Successfully loaded with encoding: {encoding}")
-                    return model
-                except Exception as e:
-                    continue
-            
-            st.error("All loading attempts failed. The file might be corrupted or saved in an unsupported format.")
             return None
             
     except Exception as e:
@@ -119,48 +111,115 @@ def load_uploaded_model(uploaded_file, model_type):
         st.error("3. The file is actually a pickle/joblib file")
         return None
 
-def diagnose_pickle_file(uploaded_file):
-    """Diagnostic function to analyze pickle file format"""
-    uploaded_file.seek(0)
-    file_content = uploaded_file.getvalue()
-    
-    st.subheader("🔍 File Diagnostic Information")
+def load_with_joblib_compat(file_content):
+    """Load with joblib and compatibility patches"""
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        warnings.simplefilter("ignore", FutureWarning)
+        return joblib.load(io.BytesIO(file_content))
+
+def load_with_pickle_compat(file_content):
+    """Load with pickle and compatibility patches"""
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return pickle.load(io.BytesIO(file_content))
+
+def load_with_joblib_ignore_warnings(file_content):
+    """Load with joblib ignoring all warnings and using different parameters"""
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            return joblib.load(io.BytesIO(file_content), mmap_mode=None)
+        except:
+            return joblib.load(io.BytesIO(file_content))
+
+def load_with_pickle_ignore_warnings(file_content):
+    """Load with pickle using different encodings"""
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        
+        # Try different encodings
+        for encoding in [None, 'latin1', 'bytes']:
+            try:
+                if encoding:
+                    return pickle.load(io.BytesIO(file_content), encoding=encoding)
+                else:
+                    return pickle.load(io.BytesIO(file_content))
+            except:
+                continue
+        raise Exception("All encoding attempts failed")
+
+def diagnose_model_file(file_content):
+    """Enhanced diagnostic function"""
+    st.subheader("🔍 Enhanced File Diagnostic Information")
     
     # File size
     st.write(f"**File size:** {len(file_content)} bytes")
     
     # File header analysis
-    header = file_content[:32]
+    header = file_content[:64]  # Extended header
     st.write(f"**File header (hex):** {header.hex()}")
-    st.write(f"**File header (bytes):** {header}")
     
-    # Check for common file signatures
-    signatures = {
-        b'\x80\x03': 'Pickle protocol 3',
-        b'\x80\x04': 'Pickle protocol 4', 
-        b'\x80\x05': 'Pickle protocol 5',
-        b'\x1f\x8b': 'Gzip compressed',
-        b'PK': 'ZIP archive (possibly joblib)',
-        b'\x89HDF': 'HDF5 format',
-    }
-    
-    detected_format = "Unknown"
-    for sig, format_name in signatures.items():
-        if file_content.startswith(sig):
-            detected_format = format_name
-            break
-    
-    st.write(f"**Detected format:** {detected_format}")
-    
-    # Try to identify the library used to save the file
+    # Check for sklearn version in the pickle
     if b'sklearn' in file_content:
-        st.write("**Library hint:** File likely contains scikit-learn objects")
-    if b'lightgbm' in file_content:
-        st.write("**Library hint:** File likely contains LightGBM objects")
-    if b'xgboost' in file_content:
-        st.write("**Library hint:** File likely contains XGBoost objects")
-    if b'catboost' in file_content:
-        st.write("**Library hint:** File likely contains CatBoost objects")
+        st.write("**Library detected:** scikit-learn model found")
+        
+        # Try to extract version info from the pickle stream
+        try:
+            sklearn_pos = file_content.find(b'sklearn')
+            context = file_content[max(0, sklearn_pos-50):sklearn_pos+200]
+            st.write(f"**sklearn context:** {context}")
+        except:
+            pass
+    
+    # Check for specific sklearn components
+    sklearn_components = [
+        b'RandomForestRegressor',
+        b'GradientBoostingRegressor', 
+        b'StackingRegressor',
+        b'Pipeline',
+        b'ColumnTransformer',
+        b'_RemainderColsList',
+        b'StandardScaler',
+        b'OneHotEncoder'
+    ]
+    
+    found_components = []
+    for component in sklearn_components:
+        if component in file_content:
+            found_components.append(component.decode('utf-8'))
+    
+    if found_components:
+        st.write(f"**Detected sklearn components:** {', '.join(found_components)}")
+    
+    # Suggest solutions
+    st.subheader("💡 Suggested Solutions")
+    st.write("1. **Re-save the model** with the current environment:")
+    st.code("""
+# In your model training environment, add this at the end:
+import joblib
+import pickle
+
+# Try both formats
+joblib.dump(best_model, 'model_joblib_compatible.pkl', protocol=2)
+with open('model_pickle_compatible.pkl', 'wb') as f:
+    pickle.dump(best_model, f, protocol=2)
+""")
+    
+    st.write("2. **Use protocol 2** (most compatible):")
+    st.code("joblib.dump(model, 'model.pkl', protocol=2)")
+    
+    st.write("3. **Check sklearn versions match** between training and deployment environments")
+
+def diagnose_pickle_file(uploaded_file):
+    """Diagnostic function to analyze pickle file format"""
+    uploaded_file.seek(0)
+    file_content = uploaded_file.getvalue()
+    diagnose_model_file(file_content)
 
 def preprocess_image(image, target_size=(224, 224)):
     """Preprocess image for model prediction"""
@@ -447,6 +506,12 @@ def process_discount_analysis(files_dict, week_range, discount_model, gradient_m
 def main():
     st.title("💰 Discount Analysis System")
     st.markdown("Upload your files and configure parameters to generate discount proposals.")
+    
+    # Display environment info
+    with st.expander("🔧 Environment Information"):
+        st.write(f"**Python version:** {sys.version}")
+        st.write(f"**Scikit-learn version:** {sklearn.__version__}")
+        st.write(f"**TensorFlow version:** {tf.__version__}")
     
     # Sidebar for file uploads
     st.sidebar.header("📁 File Uploads")
