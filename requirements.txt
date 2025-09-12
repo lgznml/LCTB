@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+openpyxl
+pillow
+tensorflow
+scikit-learn
+joblib
+requests
+tqdm
