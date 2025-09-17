@@ -262,7 +262,7 @@ def categorize_st(df, function_name, year_month, df_classified):
     
     return df_classified
 
-def process_discount_analysis(files_dict, week_range, discount_model, gradient_model):
+def process_discount_analysis(files_dict, week_range, discount_model, gradient_model, sequenza_df=None):  # ADD PARAMETER
     """Main processing function"""
     try:
         st.info("Processing discount analysis...")
@@ -494,6 +494,46 @@ def process_discount_analysis(files_dict, week_range, discount_model, gradient_m
         
         # Filter by minimum delivered quantity
         merged_df2 = merged_df2[merged_df2["Delivered item"] >= 5000]
+
+        # Process sequenza articoli sconto if provided
+        if sequenza_df is not None:
+            # Initialize new columns
+            merged_df2['Tipologia sconto applicato'] = ''
+            merged_df2['ST alla settimana di applicazione dello sconto'] = ''
+            merged_df2['Settimana applicazione sconto'] = ''
+            
+            # Merge with sequenza data
+            sequenza_df['Item Code'] = sequenza_df['Item Code'].astype(str)
+            merged_df2['Item Code_str'] = merged_df2['Item Code'].astype(str)
+            
+            # Create a mapping dictionary
+            sequenza_dict = {}
+            for _, row in sequenza_df.iterrows():
+                item_code = str(row['Item Code'])
+                sequenza_dict[item_code] = {
+                    'Tipologia sconto applicato': row.get('Tipologia sconto applicato', ''),
+                    'ST alla settimana di applicazione dello sconto': row.get('ST alla settimana di applicazione dello sconto', ''),
+                    'Settimana applicazione sconto': row.get('Settimana applicazione sconto', '')
+                }
+            
+            # Apply the mapping
+            for idx, row in merged_df2.iterrows():
+                item_code_str = str(row['Item Code'])
+                if item_code_str in sequenza_dict:
+                    merged_df2.at[idx, 'Tipologia sconto applicato'] = sequenza_dict[item_code_str]['Tipologia sconto applicato']
+                    merged_df2.at[idx, 'ST alla settimana di applicazione dello sconto'] = sequenza_dict[item_code_str]['ST alla settimana di applicazione dello sconto']
+                    merged_df2.at[idx, 'Settimana applicazione sconto'] = sequenza_dict[item_code_str]['Settimana applicazione sconto']
+            
+            # Drop the temporary column
+            merged_df2 = merged_df2.drop(columns=['Item Code_str'])
+        else:
+            # If no sequenza file, add empty columns
+            merged_df2['Tipologia sconto applicato'] = ''
+            merged_df2['ST alla settimana di applicazione dello sconto'] = ''
+            merged_df2['Settimana applicazione sconto'] = ''
+        
+        # Filter by minimum delivered quantity
+        merged_df2 = merged_df2[merged_df2["Delivered item"] >= 5000]
         
         return merged_df2
         
@@ -541,6 +581,21 @@ def main():
                 st.sidebar.success(f"✅ {label} loaded")
             except Exception as e:
                 st.sidebar.error(f"❌ Error loading {label}: {e}")
+    
+    # ADD THIS NEW SECTION FOR SEQUENZA FILE
+    sequenza_file = st.sidebar.file_uploader(
+        "Sequenza articoli sconto (Optional)",
+        type=['xlsx', 'xls'],
+        key="sequenza_file"
+    )
+    
+    sequenza_df = None
+    if sequenza_file:
+        try:
+            sequenza_df = pd.read_excel(sequenza_file)
+            st.sidebar.success("✅ Sequenza articoli sconto loaded")
+        except Exception as e:
+            st.sidebar.error(f"❌ Error loading sequenza file: {e}")
     
     # Model files upload
     st.sidebar.subheader("🤖 Model Files")
@@ -631,7 +686,8 @@ def main():
                 excel_files,
                 (start_week, end_week),
                 discount_model,
-                gradient_model
+                gradient_model,
+                sequenza_df  # ADD THIS PARAMETER
             )
             
             if result_df is not None:
@@ -685,7 +741,7 @@ def main():
                 )
 
                 
-                def apply_excel_formatting(result_df, output_buffer):
+                def apply_excel_formatting(result_df, output_buffer, sequenza_df=None):  # ADD PARAMETER
                     """Apply advanced formatting to the Excel file"""
                     try:
                         # Reset buffer position
@@ -695,8 +751,11 @@ def main():
                         wb = load_workbook(output_buffer)
                         ws = wb.active
                         
-                        # Get item codes for red formatting
-                        cod_items_seq = set(result_df["Item Code"].astype(str))
+                        # Get item codes for red formatting - only from sequenza file if provided
+                        if sequenza_df is not None:
+                            cod_items_seq = set(sequenza_df["Item Code"].astype(str))
+                        else:
+                            cod_items_seq = set()  # Empty set if no sequenza file
                         
                         # Header configuration
                         header_config = {
@@ -833,7 +892,8 @@ def main():
                     result_df.to_excel(writer, index=False, sheet_name='Discount Analysis')
                 
                 # Apply advanced formatting
-                formatted_output = apply_excel_formatting(result_df, output)
+                # Apply advanced formatting
+                formatted_output = apply_excel_formatting(result_df, output, sequenza_df)  # ADD PARAMETER
                 
                 # Download button con file formattato
                 current_date = datetime.now().strftime('%d-%m-%Y')
@@ -884,3 +944,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
