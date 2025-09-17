@@ -523,7 +523,7 @@ def main():
     # Display environment info
     with st.expander("🔧 Environment Information"):
         st.write(f"Python version: {sys.version}")
-        st.write(f"Scikit-learn version: {sklearn.version}")
+        st.write(f"**Scikit-learn version:** {sklearn.__version__}")
         st.write(f"TensorFlow version: {tf.version}")
 
     # Sidebar for file uploads
@@ -896,3 +896,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
