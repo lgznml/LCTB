@@ -89,7 +89,14 @@ if st.sidebar.button("🚀 Avvia Analisi", disabled=not (all_files_uploaded and 
             
             # Load the models
             image_model = load_model(keras_model_path)
-            gradient_model = joblib.load(pkl_model_path)
+            
+            # Handle scikit-learn version compatibility for gradient model
+            try:
+                gradient_model = joblib.load(pkl_model_path)
+            except AttributeError as e:
+                st.error(f"⚠️ Errore di compatibilità del modello: {str(e)}")
+                st.info("Il modello è stato salvato con una versione diversa di scikit-learn. Prova a ricaricare il modello con la versione corrente.")
+                st.stop()
             
             # Data preprocessing
             status_text.text("🔄 Preprocessing dati...")
