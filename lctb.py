@@ -17,18 +17,15 @@ import gzip
 import sys
 import sklearn
 from packaging import version
-
 warnings.filterwarnings('ignore')
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 PngImagePlugin.MAX_TEXT_CHUNK = 10000000
-
 # Page configuration
 st.set_page_config(
     page_title="Discount Analysis System",
     page_icon="💰",
     layout="wide"
 )
-
 def fix_sklearn_compatibility():
     """Add compatibility fixes for different sklearn versions"""
     try:
@@ -37,38 +34,37 @@ def fix_sklearn_compatibility():
     except ImportError:
         # Create a dummy class for backward compatibility
         class _RemainderColsList(list):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-        
+            def init(self, args, **kwargs):
+                super().init(args, **kwargs)
+
         # Monkey patch it into the module
         import sklearn.compose._column_transformer
         sklearn.compose._column_transformer._RemainderColsList = _RemainderColsList
-        
+
         # Also add it to the main namespace for pickle to find
         import sklearn.compose
         sklearn.compose._RemainderColsList = _RemainderColsList
-
 def load_uploaded_model(uploaded_file, model_type):
     """Enhanced model loading with sklearn version compatibility fixes"""
     try:
         # Apply sklearn compatibility fixes
         fix_sklearn_compatibility()
-        
+
         if model_type == "keras":
             # Save uploaded file temporarily and load
             with open("temp_model.keras", "wb") as f:
                 f.write(uploaded_file.getbuffer())
             model = tf.keras.models.load_model("temp_model.keras")
             return model
-            
+
         elif model_type == "pkl":
             # Reset file pointer to beginning
             uploaded_file.seek(0)
             file_content = uploaded_file.getvalue()
-            
+
             # Display sklearn version info
-            st.info(f"Current scikit-learn version: {sklearn.__version__}")
-            
+            st.info(f"Current scikit-learn version: {sklearn.version}")
+
             # Try multiple loading strategies with version compatibility
             loading_strategies = [
                 ("joblib_with_compat", lambda: load_with_joblib_compat(file_content)),
@@ -78,13 +74,13 @@ def load_uploaded_model(uploaded_file, model_type):
                 ("joblib_original", lambda: joblib.load(io.BytesIO(file_content))),
                 ("pickle_original", lambda: pickle.load(io.BytesIO(file_content))),
             ]
-            
+
             for strategy_name, load_func in loading_strategies:
                 try:
                     st.info(f"Trying to load with {strategy_name}...")
                     model = load_func()
                     st.success(f"Successfully loaded with {strategy_name}")
-                    
+
                     # Validate that the model is actually usable
                     if hasattr(model, 'predict'):
                         st.success("Model validation: predict method found")
@@ -92,17 +88,17 @@ def load_uploaded_model(uploaded_file, model_type):
                     else:
                         st.warning(f"Model loaded but no predict method found")
                         continue
-                        
+
                 except Exception as e:
                     st.warning(f"Failed with {strategy_name}: {str(e)}")
                     continue
-            
+
             # If all strategies fail, try to diagnose the issue
             st.error("All loading strategies failed. Attempting diagnosis...")
             diagnose_model_file(file_content)
-            
+
             return None
-            
+
     except Exception as e:
         st.error(f"Error loading {model_type} model: {e}")
         st.error("Please check if:")
@@ -110,7 +106,6 @@ def load_uploaded_model(uploaded_file, model_type):
         st.error("2. The file was saved with a compatible Python/library version")
         st.error("3. The file is actually a pickle/joblib file")
         return None
-
 def load_with_joblib_compat(file_content):
     """Load with joblib and compatibility patches"""
     import warnings
@@ -118,14 +113,12 @@ def load_with_joblib_compat(file_content):
         warnings.simplefilter("ignore", UserWarning)
         warnings.simplefilter("ignore", FutureWarning)
         return joblib.load(io.BytesIO(file_content))
-
 def load_with_pickle_compat(file_content):
     """Load with pickle and compatibility patches"""
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return pickle.load(io.BytesIO(file_content))
-
 def load_with_joblib_ignore_warnings(file_content):
     """Load with joblib ignoring all warnings and using different parameters"""
     import warnings
@@ -135,13 +128,12 @@ def load_with_joblib_ignore_warnings(file_content):
             return joblib.load(io.BytesIO(file_content), mmap_mode=None)
         except:
             return joblib.load(io.BytesIO(file_content))
-
 def load_with_pickle_ignore_warnings(file_content):
     """Load with pickle using different encodings"""
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        
+
         # Try different encodings
         for encoding in [None, 'latin1', 'bytes']:
             try:
@@ -152,30 +144,29 @@ def load_with_pickle_ignore_warnings(file_content):
             except:
                 continue
         raise Exception("All encoding attempts failed")
-
 def diagnose_model_file(file_content):
     """Enhanced diagnostic function"""
     st.subheader("🔍 Enhanced File Diagnostic Information")
-    
+
     # File size
-    st.write(f"**File size:** {len(file_content)} bytes")
-    
+    st.write(f"File size: {len(file_content)} bytes")
+
     # File header analysis
     header = file_content[:64]  # Extended header
-    st.write(f"**File header (hex):** {header.hex()}")
-    
+    st.write(f"File header (hex): {header.hex()}")
+
     # Check for sklearn version in the pickle
     if b'sklearn' in file_content:
-        st.write("**Library detected:** scikit-learn model found")
-        
+        st.write("Library detected: scikit-learn model found")
+
         # Try to extract version info from the pickle stream
         try:
             sklearn_pos = file_content.find(b'sklearn')
             context = file_content[max(0, sklearn_pos-50):sklearn_pos+200]
-            st.write(f"**sklearn context:** {context}")
+            st.write(f"sklearn context: {context}")
         except:
             pass
-    
+
     # Check for specific sklearn components
     sklearn_components = [
         b'RandomForestRegressor',
@@ -187,40 +178,37 @@ def diagnose_model_file(file_content):
         b'StandardScaler',
         b'OneHotEncoder'
     ]
-    
+
     found_components = []
     for component in sklearn_components:
         if component in file_content:
             found_components.append(component.decode('utf-8'))
-    
+
     if found_components:
-        st.write(f"**Detected sklearn components:** {', '.join(found_components)}")
-    
+        st.write(f"Detected sklearn components: {', '.join(found_components)}")
+
     # Suggest solutions
     st.subheader("💡 Suggested Solutions")
-    st.write("1. **Re-save the model** with the current environment:")
+    st.write("1. Re-save the model with the current environment:")
     st.code("""
 # In your model training environment, add this at the end:
 import joblib
 import pickle
-
 # Try both formats
 joblib.dump(best_model, 'model_joblib_compatible.pkl', protocol=2)
 with open('model_pickle_compatible.pkl', 'wb') as f:
     pickle.dump(best_model, f, protocol=2)
 """)
-    
-    st.write("2. **Use protocol 2** (most compatible):")
-    st.code("joblib.dump(model, 'model.pkl', protocol=2)")
-    
-    st.write("3. **Check sklearn versions match** between training and deployment environments")
 
+    st.write("2. Use protocol 2 (most compatible):")
+    st.code("joblib.dump(model, 'model.pkl', protocol=2)")
+
+    st.write("3. Check sklearn versions match between training and deployment environments")
 def diagnose_pickle_file(uploaded_file):
     """Diagnostic function to analyze pickle file format"""
     uploaded_file.seek(0)
     file_content = uploaded_file.getvalue()
     diagnose_model_file(file_content)
-
 def preprocess_image(image, target_size=(224, 224)):
     """Preprocess image for model prediction"""
     img = image.copy()
@@ -230,14 +218,13 @@ def preprocess_image(image, target_size=(224, 224)):
     top = (target_size[1] - img.size[1]) // 2
     new_img.paste(img, (left, top))
     return new_img
-
 def categorize_st(df, function_name, year_month, df_classified):
     """Categorize ST items based on function and year-month"""
     df_filtered = df[(df['Function'] == function_name) & (df['Commercial YearMonth'] == year_month)].copy()
-    
+
     if df_filtered.empty:
         return df_classified
-    
+
     if df_filtered.shape[0] == 1:
         df_function = df[df['Function'] == function_name]
         st_percentiles = df_function['ST item'].quantile([0.25, 0.5, 0.75])
@@ -245,7 +232,7 @@ def categorize_st(df, function_name, year_month, df_classified):
     else:
         st_percentiles = df_filtered['ST item'].quantile([0.25, 0.5, 0.75])
         cluster_method = "Cluster funzione/mese commerciale"
-    
+
     def categorize(row):
         if row['ST item'] <= st_percentiles[0.25]:
             return 'Basso'
@@ -255,18 +242,17 @@ def categorize_st(df, function_name, year_month, df_classified):
             return 'Medio Alto'
         else:
             return 'Alto'
-    
+
     df_filtered['ST_Cluster'] = df_filtered.apply(categorize, axis=1)
     df_filtered['Metodo Cluster'] = cluster_method
     df_classified = pd.concat([df_classified, df_filtered], ignore_index=True)
-    
-    return df_classified
 
-def process_discount_analysis(files_dict, week_range, discount_model, gradient_model):
+    return df_classified
+def process_discount_analysis(files_dict, week_range, discount_model, gradient_model, sequenza_articoli_df=None):
     """Main processing function"""
     try:
         st.info("Processing discount analysis...")
-        
+
         # Get main dataframes
         st_item = files_dict['st_item']
         A = files_dict['A']
@@ -275,120 +261,120 @@ def process_discount_analysis(files_dict, week_range, discount_model, gradient_m
         tracking = files_dict['tracking']
         goals = files_dict['goals']
         segment = files_dict['segment']
-        
+
         # Process calendar data
         calendar['YearWeek'] = calendar['YearWeek'].astype(str)
         calendar[['anno', 'settimana']] = calendar['YearWeek'].str.split('-', n=1, expand=True)
         calendar['anno'] = calendar['anno'].astype(int)
         calendar['settimana'] = calendar['settimana'].astype(int)
         calendar = calendar.sort_values(by=['anno', 'settimana']).drop(columns=['anno', 'settimana']).reset_index(drop=True)
-        
+
         # Get current week
         current_week = calendar.iloc[-1]["YearWeek"]
-        
+
         # Filter tracking data
         tracking_filtered = tracking[tracking["% Stores with Tracking within 6 weeks"] >= 0.3]
         tracking_below = tracking[tracking["% Stores with Tracking within 6 weeks"] < 0.3]
-        
+
         # Clean data
         A = A.dropna(subset=['Item Code']).fillna(0)
         B = B.dropna(subset=['Item Code']).fillna(0)
         st_item = st_item.dropna(subset=['Item Code'])
         A = A[A['Commercial YearWeek'] != 0].reset_index(drop=True)
-        
+
         # Merge st_item with A
         st_item = st_item.merge(A[['Item Code', 'Commercial YearWeek', 'Commercial YearMonth']], on='Item Code', how='left')
-        
+
         # Filter A dataframe by week range
         start_week, end_week = week_range
         start_year, start_week_num = map(int, start_week.split('-'))
         end_year, end_week_num = map(int, end_week.split('-'))
-        
+
         calendar[['anno', 'settimana']] = calendar['YearWeek'].str.split('-', n=1, expand=True)
         calendar['anno'] = calendar['anno'].astype(int)
         calendar['settimana'] = calendar['settimana'].astype(int)
-        
+
         mask = (
             ((calendar['anno'] > start_year) | ((calendar['anno'] == start_year) & (calendar['settimana'] >= start_week_num))) &
             ((calendar['anno'] < end_year) | ((calendar['anno'] == end_year) & (calendar['settimana'] <= end_week_num)))
         )
         yearweeks = calendar[mask]['YearWeek'].drop_duplicates().tolist()
         A_filtered = A[A['First Tracking YearWeek'].astype(str).isin(yearweeks)]
-        
+
         # Categorize ST items
         function_months = set(zip(st_item['Function'], st_item['Commercial YearMonth']))
         df_clusters = pd.DataFrame(columns=st_item.columns)
-        
+
         for func, year_month in function_months:
             df_clusters = categorize_st(st_item, func, year_month, df_clusters)
-        
+
         # Define item sets
         items_in_exposition_month = set(A_filtered['Item Code'])
         items_not_in_exposition_month = set(A['Item Code']) - set(A_filtered['Item Code'])
         item_codes_comuni_con_B = set(A_filtered['Item Code']).intersection(set(B['Item Code']))
-        
+
         # Items without sales in exposition month
         df_items_in_exposition_month_without_sales = A[(A["Item Code"].isin(items_in_exposition_month)) & (A["First Sale YearWeek"] == 0)]
         items_in_exposition_month_without_sales = set(df_items_in_exposition_month_without_sales["Item Code"])
-        
+
         # Items with tracking data
         df_items_above_tracked_in_exposition_month = tracking_filtered[tracking_filtered["Item Code"].isin(items_in_exposition_month)]
         items_above_tracked_in_exposition_month = set(df_items_above_tracked_in_exposition_month["Item Code"])
-        
+
         df_items_below_tracked_in_exposition_month = tracking_below[tracking_below["Item Code"].isin(items_in_exposition_month)]
         items_below_tracked_in_exposition_month = set(df_items_below_tracked_in_exposition_month["Item Code"])
-        
+
         df_items_not_tracked = A[A["First Tracking YearWeek"] == 0]
         items_not_tracked = set(df_items_not_tracked["Item Code"])
-        
+
         # Process B data for Delta ST calculations
         B_filtered = B[B['Item Code'].isin(items_above_tracked_in_exposition_month)]
-        
+
         def remove_leading_zero(year_week):
             year, week = year_week.split('-')
             week = str(int(week))
             return f"{year}-{week}"
-        
+
         B_filtered['YearWeek'] = B_filtered['YearWeek'].apply(remove_leading_zero)
         current_yw = calendar.iloc[-1]["YearWeek"]
-        
+
         # Calculate proposals for tracked items
         for item in items_above_tracked_in_exposition_month:
             parts = current_yw.split("-")
             week_number = int(parts[1])
-            
+
             if week_number != 1:
                 week_number_p2w = str(week_number)
                 week_number_p3w = str(week_number - 1)
             else:
                 week_number_p2w = "52"
                 week_number_p3w = "51"
-                
+
             week_p2w = parts[0] + "-" + week_number_p2w
             week_p3w = parts[0] + "-" + week_number_p3w
-            
+
             p2w_data = B_filtered.loc[(B_filtered["Item Code"] == item) & (B_filtered['YearWeek'] == week_p2w), 'Delta ST PW']
             p3w_data = B_filtered.loc[(B_filtered["Item Code"] == item) & (B_filtered['YearWeek'] == week_p3w), 'Delta ST PW']
-            
+
             def format_percent(x):
                 if x is None:
                     return "-"
                 else:
                     return f"{x*100:.2f}%".replace('.', ',')
-            
+
             p2w = p2w_data.values[0] if not p2w_data.empty else None
             p3w = p3w_data.values[0] if not p3w_data.empty else None
-            
+
             item_index = df_clusters.index[df_clusters['Item Code'] == item].tolist()
             if item_index:
                 item_index = item_index[0]
                 cluster = df_clusters.at[item_index, 'ST_Cluster']
                 df_clusters.at[item_index, 'Delta ST P2W'] = format_percent(p2w)
                 df_clusters.at[item_index, 'Delta ST P3W'] = format_percent(p3w)
-                
+
                 item_function = df_clusters.at[item_index, 'Function']
                 mask_function = (goals['Function'] == item_function)
-                
+
                 if not goals.loc[mask_function].empty:
                     row = goals.loc[mask_function].iloc[0]
                     theoretical_increase = row['Teorethical Increase %']
@@ -400,7 +386,7 @@ def process_discount_analysis(files_dict, week_range, discount_model, gradient_m
                 else:
                     threshold = 0.0196
                     theoretical_increase = 0.0196
-                
+
                 # Determine proposal based on cluster and performance
                 if p2w is not None and p2w > theoretical_increase * 1.25:
                     df_clusters.at[item_index, 'Proposal'] = "Nessuno Sconto"
@@ -423,7 +409,7 @@ def process_discount_analysis(files_dict, week_range, discount_model, gradient_m
                                 df_clusters.at[item_index, 'Proposal'] = "Nessuno Sconto"
                         else:
                             df_clusters.at[item_index, 'Proposal'] = "Nessuno Sconto"
-        
+
         # Set proposals for other item categories
         for item_list, proposal in [
             (items_in_exposition_month_without_sales, "Sconto Alto (NO SALES)"),
@@ -436,16 +422,16 @@ def process_discount_analysis(files_dict, week_range, discount_model, gradient_m
                 if item_index:
                     item_index = item_index[0]
                     df_clusters.at[item_index, 'Proposal'] = proposal
-        
+
         # Merge with other data
         A_excluded = A.drop(columns=['Commercial YearWeek', 'Commercial YearMonth'], errors='ignore')
         merged_df = pd.merge(df_clusters, A_excluded, on="Item Code", how="left")
         merged_df2 = pd.merge(merged_df, tracking, on="Item Code", how="left")
-        
+
         # Calculate additional metrics
         merged_df2['AVG ST Function per CommercialMonth'] = merged_df2.groupby(["Function", "Commercial YearMonth"])['ST item'].transform('mean').round(4)
         merged_df2['AVG ST Function'] = merged_df2.groupby(["Function"])['ST item'].transform('mean').round(4)
-        
+
         condition = merged_df2["Metodo Cluster"] == "Cluster funzione/mese commerciale"
         merged_df2["ST Difference"] = (
             merged_df2["ST item"].round(4) - 
@@ -454,68 +440,95 @@ def process_discount_analysis(files_dict, week_range, discount_model, gradient_m
             merged_df2["ST item"].round(4) - 
             merged_df2.groupby(["Function"])["ST item"].transform("mean").round(4)
         )
-        
+
         # Include all segments - no filtering
         merged_df2 = pd.merge(merged_df2, segment, left_on="Item Code", right_on="Cod item", how="left")
         merged_df2 = merged_df2.drop(columns=["Cod item"])
-        
+
         # Add TFI mapping
         def format_tfi(x):
             return f"{x*100:.2f}%".replace('.', ',')
-        
+
         mapping_tfi = goals.set_index("Function")["Teorethical Increase %"].apply(format_tfi).to_dict()
         merged_df2["TFI"] = merged_df2["Function"].map(mapping_tfi)
         merged_df2["TFI"] = merged_df2["TFI"].fillna("1,96%")
-        
+
         # Calculate stock and SVA
         merged_df2["Sales item"] = pd.to_numeric(merged_df2["Sales item"], errors='coerce')
         merged_df2["Delivered item"] = pd.to_numeric(merged_df2["Delivered item"], errors='coerce')
         merged_df2["Stock residuo"] = merged_df2["Delivered item"] - merged_df2["Sales item"]
-        
+
         perc_basso = 0.2
         perc_medio = 0.3
         perc_alto = 0.5
-        
+
         merged_df2["SVA"] = merged_df2.apply(lambda row: 
             row["Stock residuo"] * perc_basso if row["Proposal"] == "Sconto Basso" else
             row["Stock residuo"] * perc_medio if row["Proposal"] == "Sconto Medio" else
             row["Stock residuo"] * perc_alto if row["Proposal"] == "Sconto Alto" else 0,
             axis=1
         )
-        
+
         merged_df2["Sconto proposto"] = merged_df2.apply(lambda row: 
             "SI" if row["Proposal"] in ["Sconto Basso", "Sconto Medio", "Sconto Alto"] else "NO",
             axis=1
         )
-        
+
+        # Merge with sequenza articoli if provided
+        if sequenza_articoli_df is not None:
+            # Add new columns with empty values by default
+            merged_df2['Tipologia sconto applicato'] = ""
+            merged_df2['ST alla settimana di applicazione dello sconto'] = ""
+            merged_df2['Settimana applicazione sconto'] = ""
+
+            # Clean the Item Code column in sequenza_articoli_df to ensure proper matching
+            sequenza_articoli_df['Item Code'] = sequenza_articoli_df['Item Code'].astype(str).str.strip()
+            merged_df2['Item Code'] = merged_df2['Item Code'].astype(str).str.strip()
+
+            # Merge the sequenza articoli data
+            merged_df2 = pd.merge(
+                merged_df2,
+                sequenza_articoli_df[['Item Code', 'Tipologia sconto applicato', 'ST alla settimana di applicazione dello sconto', 'Settimana applicazione sconto']],
+                on='Item Code',
+                how='left',
+                suffixes=('', '_seq')
+            )
+
+            # Update the columns with values from sequenza articoli where available
+            merged_df2['Tipologia sconto applicato'] = merged_df2['Tipologia sconto applicato_seq'].fillna('')
+            merged_df2['ST alla settimana di applicazione dello sconto'] = merged_df2['ST alla settimana di applicazione dello sconto_seq'].fillna('')
+            merged_df2['Settimana applicazione sconto'] = merged_df2['Settimana applicazione sconto_seq'].fillna('')
+
+            # Drop the temporary columns
+            merged_df2 = merged_df2.drop(columns=['Tipologia sconto applicato_seq', 'ST alla settimana di applicazione dello sconto_seq', 'Settimana applicazione sconto_seq'])
+
         # Add processing date
         elaboration_date = datetime.today().strftime('%d-%m-%Y')
         merged_df2['Data elaborazione'] = elaboration_date
-        
+
         # Filter by minimum delivered quantity
         merged_df2 = merged_df2[merged_df2["Delivered item"] >= 5000]
-        
+
         return merged_df2
-        
+
     except Exception as e:
         st.error(f"Error during processing: {e}")
         import traceback
         st.error(traceback.format_exc())
         return None
-
 def main():
     st.title("💰 Discount Analysis System")
     st.markdown("Upload your files and configure parameters to generate discount proposals.")
-    
+
     # Display environment info
     with st.expander("🔧 Environment Information"):
-        st.write(f"**Python version:** {sys.version}")
-        st.write(f"**Scikit-learn version:** {sklearn.__version__}")
-        st.write(f"**TensorFlow version:** {tf.__version__}")
-    
+        st.write(f"Python version: {sys.version}")
+        st.write(f"Scikit-learn version: {sklearn.version}")
+        st.write(f"TensorFlow version: {tf.version}")
+
     # Sidebar for file uploads
     st.sidebar.header("📁 File Uploads")
-    
+
     # Excel files upload
     st.sidebar.subheader("📊 Excel Files")
     excel_files = {}
@@ -528,12 +541,12 @@ def main():
         'goals': 'Goals Excel file',
         'segment': 'Segment Excel file'
     }
-    
+
     for key, label in required_excel_files.items():
-        uploaded_file = st.sidebar.file_uploader(
+        uploaded_file = st.sidebar.fileuploader(
             label,
             type=['xlsx', 'xls'],
-            key=f"excel_{key}"
+            key=f"excel{key}"
         )
         if uploaded_file:
             try:
@@ -541,50 +554,71 @@ def main():
                 st.sidebar.success(f"✅ {label} loaded")
             except Exception as e:
                 st.sidebar.error(f"❌ Error loading {label}: {e}")
-    
+
+    # Optional sequenza articoli file
+    st.sidebar.subheader("📋 Optional Files")
+    sequenza_articoli_file = st.sidebar.file_uploader(
+        "Sequenza Articoli Sconto Excel file (optional)",
+        type=['xlsx', 'xls'],
+        key="sequenza_articoli",
+        help="Optional file to highlight specific item codes in red"
+    )
+
+    sequenza_articoli_df = None
+    if sequenza_articoli_file:
+        try:
+            sequenza_articoli_df = pd.read_excel(sequenza_articoli_file)
+            st.sidebar.success("✅ Sequenza Articoli file loaded")
+            # Show file structure info
+            st.sidebar.info(f"Columns found: {', '.join(sequenza_articoli_df.columns.tolist())}")
+            st.sidebar.info(f"Rows: {len(sequenza_articoli_df)}")
+        except Exception as e:
+            st.sidebar.error(f"❌ Error loading Sequenza Articoli file: {e}")
+
     # Model files upload
     st.sidebar.subheader("🤖 Model Files")
-    
+
     keras_model_file = st.sidebar.file_uploader(
         "Keras Model (.keras file)",
         type=['keras'],
         key="keras_model"
     )
-    
+
     pkl_model_file = st.sidebar.file_uploader(
         "Gradient Boosting Model (.pkl file)", 
         type=['pkl', 'joblib'],
         key="pkl_model"
     )
-    
+
     # Add diagnostic button for pickle files
     if pkl_model_file and st.sidebar.button("🔍 Diagnose Pickle File"):
         diagnose_pickle_file(pkl_model_file)
-    
+
     # Load models if uploaded
     discount_model = None
     gradient_model = None
-    
+
     if keras_model_file:
         discount_model = load_uploaded_model(keras_model_file, "keras")
         if discount_model:
             st.sidebar.success("✅ Keras model loaded")
         else:
             st.sidebar.error("❌ Failed to load Keras model")
-    
+
     if pkl_model_file:
         gradient_model = load_uploaded_model(pkl_model_file, "pkl")
         if gradient_model:
             st.sidebar.success("✅ Gradient boosting model loaded")
         else:
             st.sidebar.error("❌ Failed to load gradient boosting model")
-    
+
     # Configuration section
     st.sidebar.header("⚙️ Configuration")
-    
+
     # Week range selection
     st.sidebar.subheader("📅 Week Range")
     start_week = st.sidebar.text_input("Start Week (YYYY-WW)", value="2025-19")
+
     end_week = st.sidebar.text_input("End Week (YYYY-WW)", value="2025-25")
     
     # Check if all files are uploaded
@@ -631,7 +665,8 @@ def main():
                 excel_files,
                 (start_week, end_week),
                 discount_model,
-                gradient_model
+                gradient_model,
+                sequenza_articoli_df
             )
             
             if result_df is not None:
@@ -659,32 +694,6 @@ def main():
                 # Download section
                 st.subheader("💾 Download Results")
                 
-                # Convert to Excel
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    result_df.to_excel(writer, index=False, sheet_name='Discount Analysis')
-                
-                output.seek(0)
-                
-                # Download button
-                current_date = datetime.now().strftime('%d-%m-%Y')
-                category = max(result_df["Cod Category"])
-                if category == 31:
-                    filename = f"IC_proposte_sconti_WOMAN_{current_date}.xlsx"
-                if category == 32:
-                    filename = f"IC_proposte_sconti_MAN_{current_date}.xlsx"
-                if category == 33:
-                    filename = f"IC_proposte_sconti_KIDS_{current_date}.xlsx"
-                
-                
-                st.download_button(
-                    label="📥 Download Excel Report",
-                    data=output.getvalue(),
-                    file_name=filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-                
                 def apply_excel_formatting(result_df, output_buffer):
                     """Apply advanced formatting to the Excel file"""
                     try:
@@ -696,7 +705,10 @@ def main():
                         ws = wb.active
                         
                         # Get item codes for red formatting
-                        cod_items_seq = set(result_df["Item Code"].astype(str))
+                        if sequenza_articoli_df is not None:
+                            cod_items_seq = set(sequenza_articoli_df["Item Code"].astype(str))
+                        else:
+                            cod_items_seq = set()
                         
                         # Header configuration
                         header_config = {
@@ -796,22 +808,21 @@ def main():
                                         if "fill" in config:
                                             cell.fill = config["fill"]
                         
-                        # Apply red font to specific item codes
-                        item_code_col = None
-                        for cell in ws[1]:
-                            if cell.value == "Item Code":
-                                item_code_col = cell.column
-                                break
-                        
-                        if item_code_col is not None:
-                            red_font = Font(color="FF0000")
-                            for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-                                item_value = row[item_code_col - 1].value
-                                if str(item_value) in cod_items_seq:
-                                    for cell in row:
-                                        cell.font = red_font
-                        else:
-                            st.warning("Colonna 'Item Code' non trovata nel file di output.")
+                        # Apply red font to specific item codes from sequenza articoli
+                        if cod_items_seq:
+                            item_code_col = None
+                            for cell in ws[1]:
+                                if cell.value == "Item Code":
+                                    item_code_col = cell.column
+                                    break
+                            
+                            if item_code_col is not None:
+                                red_font = Font(color="FF0000")
+                                for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+                                    item_value = row[item_code_col - 1].value
+                                    if str(item_value) in cod_items_seq:
+                                        for cell in row:
+                                            cell.font = red_font
                         
                         # Save formatted workbook to new buffer
                         formatted_output = io.BytesIO()
@@ -826,7 +837,6 @@ def main():
                         output_buffer.seek(0)
                         return output_buffer
                 
-                # Sostituire la sezione "Convert to Excel" esistente con questo codice:
                 # Convert to Excel with basic formatting
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -870,6 +880,7 @@ def main():
         ### 📋 Required Files:
         - **📊 Excel Files**: st_item, A, B, calendar, tracking, goals, segment
         - **🤖 Model Files**: discount_predictive_model_v2.keras, optimized_gradient_boosting_model.pkl
+        - **📋 Optional**: Sequenza Articoli file (for highlighting specific items in red)
         
         ### 🔧 Troubleshooting:
         - If you get a pickle loading error, use the "🔍 Diagnose Pickle File" button
@@ -880,8 +891,8 @@ def main():
         - All segments are automatically included in the analysis
         - Only items with delivered quantity ≥ 5000 are processed
         - The analysis uses both Keras and Gradient Boosting models for predictions
+        - Items from Sequenza Articoli file will be highlighted in red in the output
         """)
 
 if __name__ == "__main__":
     main()
-
