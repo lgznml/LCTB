@@ -34,8 +34,8 @@ def fix_sklearn_compatibility():
     except ImportError:
         # Create a dummy class for backward compatibility
         class _RemainderColsList(list):
-            def init(self, args, **kwargs):
-                super().init(args, **kwargs)
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
 
         # Monkey patch it into the module
         import sklearn.compose._column_transformer
@@ -896,4 +896,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
